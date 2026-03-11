@@ -1,1 +1,1 @@
-import ./b.nix
+(import <dotfiles.nix>).home

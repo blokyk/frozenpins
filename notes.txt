@@ -1,0 +1,30 @@
+foo = {
+    __followsFn = pins: {
+        hm.nixpkgs = pins.nixpkgs
+    }
+    pins = {
+        nixpkgs = v2
+        hm = {
+            ...
+            follows = [ "nixpkgs" ]
+        }
+    }
+    code = (import <hm>).home
+}
+
+import <hm> = {
+    file = "hm"
+    follows = (foo.__followsFn foo.pins)
+    follows.hm.nixpkgs = foo.nixpkgs
+    rawPins = {
+        nixpkgs = v1
+    }
+    pins = rawPins // follows
+}
+
+hm = {
+    pins = {
+        nixpkgs = v1
+    }
+    code = (import <nixpkgs>).hello
+}

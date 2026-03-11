@@ -1,10 +1,40 @@
 {
   "pins": {
+    "dotfiles.nix": {
+      "type": "Git",
+      "follows": [
+        "nixpkgs",
+        "zoeee"
+      ],
+      "repository": {
+        "type": "GitHub",
+        "owner": "blokyk",
+        "repo": "dotfiles.nix"
+      },
+      "branch": "main",
+      "submodules": false,
+      "revision": "8841473e5e5f78e237a37984861a3f6221acf91f",
+      "url": "https://github.com/blokyk/dotfiles.nix/archive/8841473e5e5f78e237a37984861a3f6221acf91f.tar.gz",
+      "hash": "sha256-rAnzGS14N53e0NH+kbDoTDtqQhTtRNVmDfO/2NarHn8="
+    },
     "nixpkgs": {
       "type": "Channel",
       "name": "nixpkgs-unstable",
       "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.05pre960315.608d0cadfed2/nixexprs.tar.xz",
       "hash": "sha256-ng4mTBcXO6Nc1cTlXxCPkI49nDJbwFNg/DBhx7YkymE="
+    },
+    "zoeee": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "blokyk",
+        "repo": "packages.nix"
+      },
+      "branch": "main",
+      "submodules": false,
+      "revision": "4c045f25b3352ce9e8c1644c2439093f39bf7752",
+      "url": "https://github.com/blokyk/packages.nix/archive/4c045f25b3352ce9e8c1644c2439093f39bf7752.tar.gz",
+      "hash": "sha256-3vFEx4Zo6EIiGEv7fAxBXdyVrng3LwFPhyvrr7RVSTQ="
     }
   },
   "version": 7
