@@ -1,1 +1,1 @@
-builtins.attrNames builtins
+<nixpkgs/lib>

@@ -1,1 +1,1 @@
-(import <dotfiles.nix>).home
+import <a>

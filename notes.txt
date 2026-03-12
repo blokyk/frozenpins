@@ -1,20 +1,19 @@
 foo = {
-    __followsFn = pins: {
-        hm.nixpkgs = pins.nixpkgs
-    }
     pins = {
         nixpkgs = v2
         hm = {
             ...
-            follows = [ "nixpkgs" ]
         }
+    }
+    builtins.follows = {
+        hm.nixpkgs = <nixpkgs>
     }
     code = (import <hm>).home
 }
 
 import <hm> = {
     file = "hm"
-    follows = (foo.__followsFn foo.pins)
+    follows = builtins.follows
     follows.hm.nixpkgs = foo.nixpkgs
     rawPins = {
         nixpkgs = v1
@@ -25,6 +24,16 @@ import <hm> = {
 hm = {
     pins = {
         nixpkgs = v1
+        zoeee = v2
     }
-    code = (import <nixpkgs>).hello
+    builtins.follows = {
+        zoeee.nixpkgs = <nixpkgs>
+    }
+    code = (import <zoeee>).hello
+}
+
+zoeee = {
+    pins = {
+        nixpkgs = v0
+    }
 }
