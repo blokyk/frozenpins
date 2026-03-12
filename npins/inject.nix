@@ -2,47 +2,57 @@ followsFn:
 let
   # overwrite the 'import' builtin to instead be a scopedImport that
   # injects a modified __nixPath value, which contains the path to the
-  # correct pins (based on the follow rules)
+  # correct pins (based on the follow rules), as well as a modified
+  # __findFile function that returns a complex object instead of a simple
+  # path, so that our special import can use that info later
   injectImport =
     fileInfo:
-      let
-        # if it's a "file" from OUR __findFile, then it'll be an attrset,
-        # with the *actual* file path in the `.path` attr; otherwise, it's
-        # a __findFile we didn't interfere with (question: is that even possible?)
-        filePath = fileInfo.path or fileInfo;
+      if (builtins.isString fileInfo || builtins.isPath fileInfo)
+        # if we're here, that means we're importing a file within the same
+        # project (because it didn't use the <bracket> syntax), so we
+        # simply need to forward the nix path and follows, without
+        # recomputing either of them
+        then
+          scopedImport {
+            import = injectImport;
+            __nixPath = bootstrapNixPath;
+          }
+        else
+          let
+            # if it's a "file" from OUR __findFile, then it'll be an attrset,
+            # with the *actual* file path in the `.path` attr; otherwise, it's
+            # a __findFile we didn't interfere with (question: is that even possible?)
+            filePath = fileInfo.path;
 
-        # this is the value of the nix path in which the reference to `fileInfo` was resolved during the call to import
-        importersNixPath = fileInfo.nixPath or bootstrapNixPath;
-        # this is the pins used by the importer
-        pinsFromImporter = nixPathToPins importersNixPath;
+            # this is the value of the nix path in which the reference to `fileInfo` was resolved during the call to import
+            importersNixPath = fileInfo.nixPath;
+            # this is the pins used by the importer
+            pinsFromImporter = nixPathToPins importersNixPath;
 
-        # this is the name of the reference we resolved
-        # (we use `findPrefix` because, in case this was from a non-injected <bracket>,
-        # we need to check the nixpath to know which pin it corresponds to)
-        prefix = fileInfo.prefix or (findPrefix importersNixPath (toString filePath));
+            # this is the name of the reference we resolved
+            # (we use `findPrefix` because, in case this was from a non-injected <bracket>,
+            # we need to check the nixpath to know which pin it corresponds to)
+            prefix = fileInfo.prefix or (findPrefix importersNixPath (toString filePath));
 
-        follows = fileInfo.propagateFollows or (followsFn pinsFromImporter);
+            # the pins for the inside of the imported file, but without considering follows
+            basePinsForFile = getBasePinsFor (toString filePath) pinsFromImporter;
 
-        pinInfo = getPinInfoFor (toString filePath) (toString prefix) pinsFromImporter follows;
-        pinsNixPath = pinPathsToNixPath pinInfo.pins;
-        finalNixPath = /* mergeNixPaths builtins.nixPath */ pinsNixPath;
-      in
-        scopedImport {
-          import = injectImport;
-          __nixPath = (trace "nixPath for '${toString filePath}': ${_toString "" finalNixPath}" finalNixPath);
-          # __nixPath = finalNixPath;
-          __findFile =
-            nixPath: name:
-            let
-              path = builtins.findFile nixPath name;
-            in {
-              path = builtins.findFile nixPath name;
-              prefix = rootDir name;
-              propagateFollows = pinInfo.propagateFollows;
-              # the nix path in which this reference was resolved
-              nixPath = nixPath;
-            };
-        } filePath;
+            pinInfo = getPinInfoFor (toString prefix) basePinsForFile;
+            finalNixPath = pinPathsToNixPath pinInfo.pins;
+          in
+            scopedImport {
+              import = injectImport;
+              __nixPath = (trace "nixPath inside '${toString filePath}': ${_toString "" followsFn}" finalNixPath);
+              # __nixPath = finalNixPath;
+              __findFile =
+                nixPath: name: {
+                  path = builtins.findFile nixPath name;
+                  prefix = rootDir name;
+                  # the nix path in which this reference was resolved
+                  nixPath = nixPath;
+                  __toString = self: self.path;
+                };
+            } filePath;
 
   # the ambient nixPath of the file that requested the injectImport.
   #
@@ -66,7 +76,7 @@ let
       then __nixPath
       else
         let
-          rawPins = (import ./default.nix {});
+          rawPins = (builtins.import ./default.nix {});
           pinPaths = mapAttrs (_: val: val.outPath) rawPins;
           pinsNixPath = pinPathsToNixPath pinPaths;
         in
@@ -104,46 +114,29 @@ let
 
   ### pin resolution ###
 
-  getPinInfoFor =
-    filename: pinName: surroundingPins: follows:
-      breakIf false (
+  # gets the pins for the given file WITHOUT considering follows
+  getBasePinsFor =
+    filename: pinsFromParent:
       if (filename == "." || filename == "/") then
         # this file doesn't have any npins directory anywhere so there's no pins to resolve.
         # if there's a <foo> reference in it, it will just search the ambient (potentially injected) nixPath
-        { pins = {}; propagateFollows = follows; }
+        { pins = pinsFromParent; propagateFollows = {}; }
       else
       if (builtins.pathExists (filename + "/npins/default.nix"))
         then
-          let rawNpins = builtins.import (filename + "/npins/default.nix") {}; in
-          if (pinName == null)
-            then
-              trace
-                "Couldn't find ${toString filename} in paths [${
-                  concatStringsSep ""
-                    (map (e: "\n  ${e.prefix}: ${toString e.path}") surroundingPins)
-                }]"
-                { pins = rawNpins; propagateFollows = follows; }
-            else
-              let
-                basePins = mapAttrs (rewriteNpinsEntries pinName) rawNpins;
-                ourFollows = (normalizeFollows follows).${pinName} or {};
-
-                followedPins = ourFollows.${pinName}.leaves or {};
-                propagateFollows = ourFollows.${pinName}.propagated or {};
-                finalPins = surroundingPins // basePins // followedPins;
-              in
-                (breakIf false trace)
-                ''
-                  ${pinName}:
-                    - env: ${_toString "    " surroundingPins}
-                    - base: ${_toString "    " basePins}
-                    - follows: ${_toString "    " followedPins}
-                  directly, propagating ${_toString "  " propagateFollows}
-                  (source: ${_toString "  " (normalizeFollows follows)})
-                ''
-                { pins = finalPins; inherit propagateFollows; }
+          let
+            # the pins from the npins bundled with the project
+            rawNpins = builtins.import (filename + "/npins/default.nix") {};
+            # normal npins + pins from the importer
+            basePins = pinsFromParent // mapAttrs (rewriteNpinsEntries "") rawNpins;
+          in
+            basePins
         else
-          getPinInfoFor (dirOf filename) pinName surroundingPins follows);
+          getBasePinsFor (dirOf filename) pinsFromParent;
+
+  # todo
+  getPinInfoFor =
+    pinName: basePins: { pins = basePins; };
 
   pinPathsToNixPath = pins: builtins.attrValues (
     mapAttrs (
