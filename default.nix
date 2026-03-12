@@ -1,7 +1,14 @@
 let
-  pins = import ./npins/default.nix;
-  injectImport = import ./npins/inject.nix {
-    a.b = pins.b;
-  };
+  injectImport = import ./npins/inject.nix (pins: {
+    a.b.c = pins.c;
+    #  = {
+    #   follows = pins.b;
+    #   inputs = {
+    #     c = pins.c;
+    #   };
+    # };
+    # foo.bar.baz = pins.baz;
+    # foo.alice = ./alice-wip;
+  });
 in
-  injectImport ./a.nix
+  injectImport ./main.nix
