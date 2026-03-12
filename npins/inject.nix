@@ -1,5 +1,8 @@
 followsFn:
 let
+  injectorNpins = builtins.import ./default.nix;
+  injectorPinPaths = mapAttrs (rewriteNpinsEntries (_toString "" followsFn)) injectorNpins;
+
   # overwrite the 'import' builtin to instead be a scopedImport that
   # injects a modified __nixPath value, which contains the path to the
   # correct pins (based on the follow rules), as well as a modified
@@ -13,10 +16,22 @@ let
         # simply need to forward the nix path and follows, without
         # recomputing either of them
         then
-          scopedImport {
-            import = injectImport;
-            __nixPath = bootstrapNixPath;
-          }
+          let
+            # the nix path that we know the importer had when importing that file
+            fileNixPath = pinPathsToNixPath injectorPinPaths;
+          in
+            scopedImport {
+              import = injectImport;
+              __nixPath = fileNixPath;
+              __findFile =
+                nixPath: name: {
+                  path = builtins.findFile fileNixPath name;
+                  prefix = rootDir name;
+                  # the nix path in which this reference was resolved
+                  nixPath = fileNixPath;
+                  __toString = self: self.path;
+                };
+            }
         else
           let
             # if it's a "file" from OUR __findFile, then it'll be an attrset,
