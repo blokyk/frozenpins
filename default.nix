@@ -1,4 +1,6 @@
 let
-  injectImport = import ./npins/inject.nix "hello";
+  injectImport = import ./npins/inject.nix { name = "roto"; } (pins: {
+
+  });
 in
   injectImport ./main.nix

@@ -1,5 +1,6 @@
 {
   git,
+  nix,
   npins,
   runCommand,
 
@@ -9,11 +10,13 @@
   ...
 }:
 runCommand "root" {
-  nativeBuildInputs = [ git npins ];
+  nativeBuildInputs = [ git nix npins ];
 
   injectExpr = ''
     let
-      injectImport = import ./npins/inject.nix "inject from root";
+      injectImport = import ./npins/inject.nix { name = "root"; } (pins: {
+        
+      });
     in
       injectImport ./main.nix
   '';

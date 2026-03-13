@@ -1,8 +1,5 @@
-followsFn:
+{ name, ... }: followsFn:
 let
-  injectorNpins = builtins.import ./default.nix;
-  injectorPinPaths = mapAttrs (rewriteNpinsEntries (_toString "" followsFn)) injectorNpins;
-
   # overwrite the 'import' builtin to instead be a scopedImport that
   # injects a modified __nixPath value, which contains the path to the
   # correct pins (based on the follow rules), as well as a modified
@@ -10,28 +7,57 @@ let
   # path, so that our special import can use that info later
   injectImport =
     fileInfo:
-      if (builtins.isString fileInfo || builtins.isPath fileInfo)
-        # if we're here, that means we're importing a file within the same
-        # project (because it didn't use the <bracket> syntax), so we
-        # simply need to forward the nix path and follows, without
-        # recomputing either of them
-        then
-          let
-            # the nix path that we know the importer had when importing that file
-            fileNixPath = pinPathsToNixPath injectorPinPaths;
-          in
-            scopedImport {
-              import = injectImport;
-              __nixPath = fileNixPath;
-              __findFile =
-                nixPath: name: {
-                  path = builtins.findFile fileNixPath name;
-                  prefix = rootDir name;
-                  # the nix path in which this reference was resolved
-                  nixPath = fileNixPath;
-                  __toString = self: self.path;
-                };
-            }
+      let
+        pins = injectorEnvironment.pins;
+        follows = injectorEnvironment.follows;
+        nixPath = pinPathsToNixPath pins;
+      in
+        scopedImport {
+          import = injectImport;
+          __nixPath = nixPath;
+          builtins = builtins // { __follows = follows; };
+          __findFile =
+            nixPath: name:
+            let
+              prefix = rootDir name;
+            in {
+              path = builtins.findFile pins name;
+              inherit prefix;
+              follows = follows.prefix or {};
+              # the nix path in which this reference was resolved
+              nixPath = nixPath;
+              __toString = self: self.path;
+            };
+        } fileInfo;
+
+  injectorNpins = builtins.import ./default.nix {};
+
+  injectorEnvironment =
+    let
+      # the basic pins that we specified in npins/sources.json
+      npinsPaths = mapAttrs (_: val: val.outPath) injectorNpins;
+
+      # the follows that our parent requests of us
+      inheritedFollows = builtins.__follows or {};
+
+      # the follows that we (the imported project) want to use
+      ourFollows = followsFn (npinsPaths // inheritedFollows);
+
+      ourPinsAndFollows = npinsPaths // ourFollows // inheritedFollows;
+
+      # actual pins for us to use will be of the form { b = "foo"; },
+      # whereas follows will be nested { b.c = "bar"; }
+      isLeafPin = val: builtins.isString val || builtins.isPath val;
+
+      splitPinsAndFollows = partitionAttrs (_: isLeafPin) ourPinsAndFollows;
+    in {
+      # the pins we will actual use to lookup dependencies
+      pins = splitPinsAndFollows.right;
+      # the follows we will forward to our deps/children
+      follows = splitPinsAndFollows.wrong;
+    };
+
+/*
         else
           let
             # if it's a "file" from OUR __findFile, then it'll be an attrset,
@@ -67,7 +93,19 @@ let
                   nixPath = nixPath;
                   __toString = self: self.path;
                 };
-            } filePath;
+            } filePath;*/
+
+  getPinsFor =
+    fileInfo:
+      if (builtins.isString fileInfo || builtins.isPath fileInfo)
+        # if we're here, that means we're importing a file within the same
+        # project (because it didn't use the <bracket> syntax), so we
+        # simply need to forward the nix path and follows, without
+        # recomputing either of them
+        then
+          injectorPinPaths
+        else
+          injectorPinPaths;
 
   # the ambient nixPath of the file that requested the injectImport.
   #

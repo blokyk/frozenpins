@@ -1,7 +1,7 @@
 let
-  inherit (import <nixpkgs> {}) git npins runCommand;
+  inherit (import <nixpkgs> {}) git nix npins runCommand;
 
-  base = runCommand "base" { nativeBuildInputs = [ git npins ]; } ''
+  base = runCommand "base" { nativeBuildInputs = [ git nix npins ]; } ''
     mkdir -p "$out"
     cd "$out"
     git -c init.defaultBranch=main init
@@ -15,7 +15,7 @@ let
     git tag v1 HEAD
   '';
 in
-  runCommand "test" { nativeBuildInputs = [ git npins ]; } ''
+  runCommand "test" { nativeBuildInputs = [ git nix npins ]; } ''
     mkdir -p "$out"
     cd "$out"
 

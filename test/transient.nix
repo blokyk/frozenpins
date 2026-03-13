@@ -1,6 +1,7 @@
 {
   git,
   npins,
+  nix,
   runCommand,
 
   transient-no-pins,
@@ -8,11 +9,13 @@
   ...
 }:
 runCommand "transient" {
-  nativeBuildInputs = [ git npins ];
+  nativeBuildInputs = [ git nix npins ];
 
   injectExpr = ''
     let
-      injectImport = import ./npins/inject.nix "inject from transient";
+      injectImport = import ./npins/inject.nix { name = "transient"; } (pins: {
+        
+      });
     in
       injectImport ./main.nix
   '';
@@ -38,8 +41,6 @@ runCommand "transient" {
     "sub(transient)#3(transient-no-pins#2: ''${import <transient-no-pins>})"
   '';
 } ''
-  cd "$TMP"
-
   export HOME="$TMP"
   export GIT_AUTHOR_DATE="1970-01-01 00:00:00 +0000"
   export GIT_COMMITTER_DATE="1970-01-01 00:00:00 +0000"
@@ -47,32 +48,29 @@ runCommand "transient" {
   git config --global user.name "Your Name"
   git config --global init.defaultBranch main
 
-  cp -r --no-preserve=all ${transient-no-pins} $TMP/transient-no-pins
-  cp -r --no-preserve=all ${leaf} $TMP/leaf
-
   git init
 
   npins init --bare
   ln -s /home/blokyk/dev/lab/nix-crimes/npins-resolve/npins/inject.nix ./npins/inject.nix
   echo "$injectExpr" > default.nix
 
-  npins add git "file://$TMP/transient-no-pins" --at v1 --name transient-no-pins
-  npins add git "file://$TMP/leaf" --at v1 --name leaf
+  npins add git "file://${transient-no-pins}" --at v1 --name transient-no-pins
+  npins add git "file://${leaf}" --at v1 --name leaf
   echo "$main1" > main.nix
   echo "$sub1" > sub.nix
   git add .
   git commit -m "v1"
   git tag v1 HEAD
 
-  npins add git "file://$TMP/transient-no-pins" --at v2 --name transient-no-pins
-  npins add git "file://$TMP/leaf" --at v2 --name leaf
+  npins add git "file://${transient-no-pins}" --at v2 --name transient-no-pins
+  npins add git "file://${leaf}" --at v2 --name leaf
   echo "$main2" > main.nix
   echo "$sub2" > sub.nix
   git add .
   git commit -m "v2"
   git tag v2 HEAD
 
-  npins add git "file://$TMP/leaf" --at v3 --name leaf
+  npins add git "file://${leaf}" --at v3 --name leaf
   echo "$main3" > main.nix
   echo "$sub3" > sub.nix
   git add .
