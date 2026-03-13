@@ -3,14 +3,21 @@ let
   traceValFn = f: val: builtins.trace (f val) val;
   traceVal = traceValFn (_toString "");
 
-  # if we're at the root, there's no follows to be inherited,
-  # but otherwise the parent will init `inheritedFollows` in
-  # the lexical scope using the bootstrap import
-  inheritedFollows = builtins.__inheritedFollows or {};
-
   currPinsAndFollows =
-    let npins = builtins.import ./default.nix {}; in
-    computeFollowsAndPins inheritedFollows projectFollows (npinsToPinPaths npins);
+    let
+      # if we're at the root, there's no follows to be inherited,
+      # but otherwise the parent will init `inheritedFollows` in
+      # the lexical scope using the bootstrap import
+      inheritedFollows =
+        builtins.__inheritedFollows
+        or (
+          assert __nixPath == builtins.nixPath || throw "__inheritedFollows not found despite not being at root";
+          {}
+        );
+      npins = builtins.import ./default.nix {};
+      npinsPaths = npinsToPinPaths npins;
+    in
+      applyFollows inheritedFollows projectFollows npinsPaths;
 
   # this is only used when importing either `project/*.nix`
   # or `root/*.nix`, but NEVER an `inject.nix`
@@ -33,7 +40,8 @@ let
 
   isProject = fileInfo: builtins.isAttrs fileInfo;
 
-  # the import used for any subfile of a project (including the root project)
+  # the import used for any subfile of a project (including root/default.nix)
+  # it should never be used to import npins/inject.nix
   subfileImport = fileInfo:
     # if we're not actually importing a file but a project, then
     # use bootstrapImport instead, which will deal with computing
@@ -50,20 +58,13 @@ let
         env = {
           import = subfileImport;
           __nixPath = currNixPath;
-          __findFile =
-            nixPath: name:
-              let
-                prefix = toString (rootDir name);
-                path = builtins.findFile nixPath name;
-              in
-              (trace) (builtins.seq currNixPath "${shortPath} requested <${prefix}>: ${path}")
-              ((mkResolveSymbol currPins currFollows) nixPath name);
+          __findFile = mkResolveSymbol { currFile = shortPath; } currPins currFollows;
         };
       in
       scopedImport env fileInfo;
 
   # creates a __findFile function that will forward `follows.<project>`
-  mkResolveSymbol =
+  mkResolveSymbol = { currFile }:
     parentPins: allParentFollows:
     nixPath: name:
       # the nixPath in which we're resolving this symbol should
@@ -74,13 +75,16 @@ let
         path = builtins.findFile nixPath name;
         followsForThisSymbol = (allParentFollows.${prefix} or {});
       in
-      seq {
+      (break trace) "${currFile} requested <${prefix}>: ${path}"
+      {
         inherit path prefix;
         parentFollows =
           (trace) "<${prefix}> will inherit follows ${_toString "" followsForThisSymbol}"
           followsForThisSymbol;
         # the nix path in which this reference was resolved
-        parentPins = parentPins;
+        parentPins =
+          (trace) "<${prefix}> will inherit pins ${_toString "" parentPins}"
+          parentPins;
         __toString = self: self.path;
       };
 
@@ -113,17 +117,20 @@ let
     # the import that's injected into the project's files' scope
     project:
       let
-        # the pins (and follows) inside the project, considering
-        # the inherited follows but NOT the project's own declared
-        # follows, since only the project's inject.nix can know
-        # that.
-        inheritedPinsAndFollows =
+        # the follows that we used to create the inheritedPins
+        #
+        # THIS is the reason we're doing all this: so that we
+        # can pass the parent's follows for *this* project
+        # (an information that we can only compute with the
+        # project's name) ONTO the child/project, so that they can use
+        # it in their pin resolution
+        inheritedFollows = break project.parentFollows;
+
+        # the pins inside the project, considering the inherited
+        # follows but NOT the project's own declared follows
+        # (since only the project's inject.nix can know that).
+        inheritedPins =
           let
-            # THIS is the reason we're doing all this: so that we
-            # can pass the parent's follows for *this* project,
-            # an information that we can only compute with the
-            # project's name, and thus that only the parent will
-            # know/determine
             parentFollows = project.parentFollows;
             # since we can't yet know what the follow function of
             # the project will be, and since `parentFollows` already
@@ -146,25 +153,22 @@ let
             # for `b` (if any)
             parentPins = project.parentPins;
           in
-            computeFollowsAndPins
+            (applyFollows
               parentFollows
               followsFn
-              parentPins;
-
-        inheritedFollows = break (inheritedPinsAndFollows.follows);
-        pins = break (inheritedPinsAndFollows.pins);
+              parentPins).pins;
 
         env = {
           import = bootstrapProjectImport project;
-          __findFile = mkResolveSymbol pins inheritedFollows;
-          __nixPath = pinPathsToNixPath pins;
+          __findFile = mkResolveSymbol { currFile = project.prefix; } inheritedPins inheritedFollows;
+          __nixPath = pinPathsToNixPath inheritedPins;
           builtins = builtins // {
             __inheritedFollows = inheritedFollows;
           };
         };
       in
         fileInfo:
-          scopedImport env fileInfo.path or fileInfo;
+          scopedImport env (fileInfo.path or fileInfo);
           # note: unlike subfileImport, we don't have to check
           # if this "fileInfo" is actually a path/subfile, because
           # either:
@@ -179,9 +183,37 @@ let
           #     DOES use an injector (in case it'll go to the first
           #     case above)
 
-  computeFollowsAndPins =
+  # given:
+  #   - a set of follows (overrides)
+  #   - a function that gives us the project's follows based on its pins
+  #   - the project's initial pins
+  # this computes the final values of the pin, as well as the follows we'll
+  # need to pass down to our children. `inheritedFollows` takes precedence
+  # over `followsFn`, which itself takes precedence over `basePins`
+  #
+  # for example: (with numbers in place of `{ outPath = /nix/...name-v1.2.3; }`)
+  #   applyFollows
+  #     { a.b = 01; d = 03; }
+  #     (pins: { c.d = pins.d; e = 14; })
+  #     { a = 25; c = 27; d = 28; e = 29 }
+  #   =
+  #     pins
+  #       = {
+  #         a = 25;
+  #         c = 27;
+  #         d = 03; # overridden by `inheritedFollows`
+  #         e = 14; # overridden by `followsFn`
+  #       }
+  #
+  #     follows
+  #       = {
+  #         a.b = 01; # directly overridden by `inheritedFollows`
+  #         c.d = 03; # overridden by `followsFn`, but using the final
+  #                   # pin version (03), defined by `inheritedFollows`
+  #       }
+  applyFollows =
     inheritedFollows: # the follows that our parent requests for these pins
-    followsFn:
+    followsFn:        # the follows we should apply to the whole project
     basePins:
       let
         # the base pins are of the form `foo = /nix/...-foo`, whereas follows
@@ -203,6 +235,10 @@ let
         # note: the fact that we merge `ourFollows` in the middle here
         #       means that you can overwrite your own pins if you want
         #       to (e.g. to redirect a dependency to a local path)
+        #
+        # fixme: `pins` is polluted when overriding a project that's not in the base pins
+        # since we don't check that pins exist in basePins before overriding them and
+        # setting the path, follows can "create" pins out of thin air :/
         allPinsAndFollows = recursiveUpdate [basePinsAsFollows ourFollows inheritedFollows];
 
         # actual pins for us to use will be of the form { b = { outPath = "foo"; }; },
@@ -210,17 +246,16 @@ let
         isLeafPin = val: val ? outPath;
 
         onlyPins = filterAttrs (_: isLeafPin) allPinsAndFollows;
+      in {
         # the pins we will actual use to lookup dependencies
         # (we "lift" `outPath` out)
         pins = mapAttrs (_: val: val.outPath) onlyPins;
         # just remove the `outPath` attribute (if any) to avoid
         # polluting the follows
         follows = mapAttrs (_: val: removeAttrs val ["outPath"]) allPinsAndFollows;
-      in break {
-        inherit pins follows;
       };
 
-  npinsToPinPaths = mapAttrs (_: val: { inherit (val) outPath; });
+  npinsToPinPaths = mapAttrs (_: val: val.outPath);
   pinPathsToNixPath = pins: builtins.attrValues (
     mapAttrs (
       pin: val: {
