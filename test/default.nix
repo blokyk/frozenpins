@@ -5,4 +5,4 @@ let
   transient-no-pins = pkgs.callPackage ./transient-no-pins.nix { };
   leaf = pkgs.callPackage ./leaf.nix { };
 in
-  import root
+  root

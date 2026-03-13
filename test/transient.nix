@@ -13,32 +13,82 @@ runCommand "transient" {
 
   injectExpr = ''
     let
-      injectImport = import ./npins/inject.nix { name = "transient"; } (pins: {
-        
+      injectImport = import ./npins/inject.nix (pins: {
+
       });
     in
       injectImport ./main.nix
   '';
 
-  main1 = ''
-    "transient#1(sub(transient): ''${import ./sub.nix}, transient-no-pins#1: ''${import <transient-no-pins>}, leaf#1: ''${import <leaf>})"
+  main1 = ''{
+    name = "transient";
+    v = 1;
+    # sub = import ./sub.nix;
+    transient-no-pins = {
+      v = 1;
+      val = import <transient-no-pins>;
+    };
+    leaf = {
+      v = 1;
+      val = import <leaf>;
+    };
+  }
   '';
-  sub1 = ''
-    "sub(transient)#1(transient-no-pins#1: ''${import <transient-no-pins>})"
+  sub1 = ''{
+    v = 1;
+    transient-no-pins = {
+      v = 1;
+      val = import <transient-no-pins>;
+    };
+  }
   '';
 
-  main2 = ''
-    "transient#2(sub: ''${import ./sub.nix}, transient-no-pins#2: ''${import <transient-no-pins>}, leaf#2: ''${import <leaf>})"
+  main2 = ''{
+    name = "transient";
+    v = 2;
+    # sub = import ./sub.nix;
+    transient-no-pins = {
+      v = 2;
+      val = import <transient-no-pins>;
+    };
+    leaf = {
+      v = 2;
+      val = import <leaf>;
+    };
+  }
   '';
-  sub2 = ''
-    "sub(transient)#2(transient-no-pins#2: ''${import <transient-no-pins>})"
+  sub2 = ''{
+    v = 2;
+    transient-no-pins = {
+      v = 2;
+      val = import <transient-no-pins>;
+    };
+  }
   '';
 
-  main3 = ''
-    "transient#3(sub: ''${import ./sub.nix}, transient-no-pins#2: ''${import <transient-no-pins>}, leaf#3: ''${import <leaf>})
+
+
+  main3 = ''{
+    name = "transient";
+    v = 3;
+    # sub = import ./sub.nix;
+    transient-no-pins = {
+      v = 2;
+      val = import <transient-no-pins>;
+    };
+    leaf = {
+      v = 3;
+      val = import <leaf>;
+    };
+  }
   '';
-  sub3 = ''
-    "sub(transient)#3(transient-no-pins#2: ''${import <transient-no-pins>})"
+  sub3 = ''{
+    v = 3;
+    transient-no-pins = {
+      v = 2;
+      val = import <transient-no-pins>;
+    };
+  }
   '';
 } ''
   export HOME="$TMP"
@@ -51,7 +101,9 @@ runCommand "transient" {
   git init
 
   npins init --bare
-  ln -s /home/blokyk/dev/lab/nix-crimes/npins-resolve/npins/inject.nix ./npins/inject.nix
+  substituteInPlace npins/default.nix \
+    --replace-fail 'builtins.fromJSON (builtins.readFile input)' 'builtins.fromJSON (builtins.unsafeDiscardStringContext (builtins.readFile input))'
+  cp ${../npins/inject.nix} ./npins/inject.nix
   echo "$injectExpr" > default.nix
 
   npins add git "file://${transient-no-pins}" --at v1 --name transient-no-pins

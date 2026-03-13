@@ -1,5 +1,6 @@
 {
   git,
+  gnused,
   nix,
   npins,
   runCommand,
@@ -10,36 +11,96 @@
   ...
 }:
 runCommand "root" {
-  nativeBuildInputs = [ git nix npins ];
+  nativeBuildInputs = [ git gnused nix npins ];
 
   injectExpr = ''
     let
-      injectImport = import ./npins/inject.nix { name = "root"; } (pins: {
-        
+      injectImport = import ./npins/inject.nix (pins: {
+        transient.leaf = pins.leaf;
       });
     in
       injectImport ./main.nix
   '';
 
-  main1 = ''
-    "root#1(sub(root): ''${import ./sub.nix}, transient#1: ''${import <transient>}, transient-no-pins#1: ''${import <transient-no-pins>})"
+  main1 = ''{
+    name = "root";
+    v = 1;
+    # sub = import ./sub.nix;
+    transient = {
+      v = 1;
+      val = import <transient>;
+    };
+    transient-no-pins = {
+      v = 1;
+      val = import <transient-no-pins>;
+    };
+    leaf = {
+      v = 1;
+      val = import <leaf>;
+    };
+  }
   '';
-  sub1 = ''
-    "sub(root)#1(transient#1: ''${import <transient>})"
+  sub1 = ''{
+    v = 1;
+    transient = {
+      v = 1;
+      val = import <transient>;
+    };
+  }
   '';
 
-  main2 = ''
-    "root#2(sub(root): ''${import ./sub.nix}, transient#2: ''${import <transient>}, transient-no-pins#1: ''${import <transient-no-pins>})"
+  main2 = ''{
+    name = "root";
+    v = 2;
+    # sub = import ./sub.nix;
+    transient = {
+      v = 2;
+      val = import <transient>;
+    };
+    transient-no-pins = {
+      v = 1;
+      val = import <transient-no-pins>;
+    };
+    leaf = {
+      v = 1;
+      val = import <leaf>;
+    };
+  }
   '';
-  sub2 = ''
-    "sub(root)#2(transient#2: ''${import <transient>})"
+  sub2 = '' {
+    v = 2;
+    transient = {
+      v = 2;
+      val = import <transient>;
+    };
+  }
   '';
 
-  main3 = ''
-    "root#3(sub(root): ''${import ./sub.nix}, transient#3: ''${import <transient>}, transient-no-pins#3: ''${import <transient-no-pins>})
+  main3 = ''{
+    name = "root";
+    v = 3;
+    # sub = import ./sub.nix;
+    transient = {
+      v = 3;
+      val = import <transient>;
+    };
+    transient-no-pins = {
+      v = 3;
+      val = import <transient-no-pins>;
+    };
+    leaf = {
+      v = 1;
+      val = import <leaf>;
+    };
+  }
   '';
-  sub3 = ''
-    "sub(root)#3(transient#3: ''${import <transient>})"
+  sub3 = '' {
+    v = 3;
+    transient = {
+      v = 3;
+      val = import <transient>;
+    };
+  }
   '';
 } ''
   cd "$TMP"
@@ -54,7 +115,9 @@ runCommand "root" {
   git init
 
   npins init --bare
-  ln -s /home/blokyk/dev/lab/nix-crimes/npins-resolve/npins/inject.nix ./npins/inject.nix
+  substituteInPlace npins/default.nix \
+    --replace-fail 'builtins.fromJSON (builtins.readFile input)' 'builtins.fromJSON (builtins.unsafeDiscardStringContext (builtins.readFile input))'
+  cp ${../npins/inject.nix} ./npins/inject.nix
   echo "$injectExpr" > default.nix
 
   npins add git file://${transient} --at v1 --name transient
@@ -67,7 +130,7 @@ runCommand "root" {
   git tag v1 HEAD
 
   npins add git file://${transient} --at v2 --name transient
-  npins add git file://${leaf} --at v3 --name leaf
+  # npins add git file://${leaf} --at v3 --name leaf
   echo "$main2" > main.nix
   echo "$sub2" > sub.nix
   git add .

@@ -3,30 +3,34 @@
   runCommand,
   ...
 }:
+let
+  main = v: ''{
+    name = "transient-no-pins";
+    v = ${toString v};
+    # sub = import ./sub.nix;
+    leaf = {
+      v = "parent";
+      val = import <leaf>;
+    };
+  }
+  '';
+  sub = v: ''{
+    v = ${toString v};
+    leaf = {
+      v = "parent";
+      val = import <leaf>;
+    };
+  }
+  '';
+in
 runCommand "transient-no-pins" {
   nativeBuildInputs = [ git ];
-
-  main1 = ''
-    "transient-no-pins#1(sub(transient-no-pins): ''${import ./sub.nix}, leaf: ''${import <leaf>})"
-  '';
-  sub1 = ''
-    "sub(transient-no-pins)#1(leaf: ''${import <leaf>})"
-  '';
-
-  main2 = ''
-    "transient-no-pins#2(sub(transient-no-pins): ''${import ./sub.nix}, leaf: ''${import <leaf>})"
-  '';
-  sub2 = ''
-    "sub(transient-no-pins)#2(leaf: ''${import <leaf>})"
-  '';
-
-  main3 = ''
-    "transient-no-pins#3(sub(transient-no-pins): ''${import ./sub.nix}, leaf: ''${import <leaf>})"
-  '';
-  sub3 = ''
-    "sub(transient-no-pins)#3(leaf: ''${import <leaf>})"
-  '';
-
+  main1 = main 1;
+  main2 = main 2;
+  main3 = main 3;
+  sub1 = sub 1;
+  sub2 = sub 2;
+  sub3 = sub 3;
 } ''
   cd "$TMP"
 
@@ -39,19 +43,19 @@ runCommand "transient-no-pins" {
 
   git init
 
-  echo "$main1" > main.nix
+  echo "$main1" > default.nix
   echo "$sub1" > sub.nix
   git add .
   git commit -m "v1"
   git tag v1 HEAD
 
-  echo "$main2" > main.nix
+  echo "$main2" > default.nix
   echo "$sub2" > sub.nix
   git add .
   git commit -m "v2"
   git tag v2 HEAD
 
-  echo "$main3" > main.nix
+  echo "$main3" > default.nix
   echo "$sub3" > sub.nix
   git add .
   git commit -m "v3"

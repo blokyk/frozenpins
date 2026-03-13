@@ -1,39 +1,145 @@
-foo = {
-    pins = {
-        nixpkgs = v2
-        hm = {
-            ...
-        }
-    }
-    builtins.follows = {
-        hm.nixpkgs = <nixpkgs>
-    }
-    code = (import <hm>).home
-}
+--- default.nix ---
+scope: import = builtins.import
 
-import <hm> = {
-    file = "hm"
-    follows = builtins.follows
-    follows.hm.nixpkgs = foo.nixpkgs
-    rawPins = {
-        nixpkgs = v1
-    }
-    pins = rawPins // follows
-}
+importA
+  = builtins.import inject (pins: {
 
-hm = {
-    pins = {
-        nixpkgs = v1
-        zoeee = v2
-    }
-    builtins.follows = {
-        zoeee.nixpkgs = <nixpkgs>
-    }
-    code = (import <zoeee>).hello
-}
+    });
 
-zoeee = {
-    pins = {
-        nixpkgs = v0
+--- inject.nix ---
+scope: followsFn = (pins: {})
+
+  # if we're at the root, there's no follows to be inherited,
+  # but otherwise the parent will init `inheritedFollows` in
+  # the lexical scope using the bootstrap import
+  inheritedFollows = builtins.inheritedFollows or {}
+
+  # this is only used when importing either `project/*.nix`
+  # or `root/*.nix`, but NEVER an `inject.nix`
+  #
+  # either:
+  #   - we're inside a project
+  #     -> we need to combine the inheritedFollows with followsFn
+  #
+  #   - we're importing a root file
+  #     -> we don't have any inheritedFollows, we just need to
+  #        compute followsFn
+  currFollows = (followsFn currPins) // inheritedFollows
+
+  # if we're importing `project/*.nix`, we have to compute
+  # the pins based on the projects we specified in npins/sources.json,
+  # while still respecting followsFn and our parent's follows
+  currPins = npins // (pinsOf currFollows)
+
+  subfileImport = subfile:
+    env(subfile) = {
+      import = this;
+
+      pins = currPins;
+
+      find = prefix: {
+        path = lookup prefix pins;
+        projFollows = currFollows.${prefix};
+      }
     }
-}
+
+  bootstrapImport = project:
+    env(project) = {
+      import = bootstrapImport;
+
+      # THIS is the reason we're doing all this: so that we
+      # can pass the parent's follows for *this* project,
+      # an information that we can only compute with the
+      # project's name, and thus that only the parent will
+      # know/determine
+      inheritedFollows = project.projFollows;
+
+      # the pins inside the project, considering the
+      # inherited follows but NOT the project's own declared
+      # follows, since only the project's inject.nix can know
+      # that.
+      #
+      # for projects WITH an injector, this will be overwritten
+      # by the injector, which will read project/npins and override
+      # them based on the inheritedFollows
+      #
+      # for projects WITHOUT an injector, they'll use <channels>
+      # directly, expecting them to be setup in the user's
+      # environment, and they most likely won't have an npins/
+      # folder. therefore, the "user environment" will simply be
+      # the pins of the parent/importing project (e.g. root).
+      # however, we still need to override the pins based on the
+      # parent's follows: if the `root` asked for { a.b = foo; },
+      # and `a` doesn't use an injector and just uses `<b>`, we
+      # still want that to resolve to `foo` instead of `root`'s pins
+      # for `b` (if any)
+      pins = computeBootstrapPins(parentPins, this.inheritedFollows);
+
+      find = prefix: {
+        path = lookup prefix pins;
+        projFollows = this.inheritedFollows.${prefix}
+      }
+    }
+
+
+
+--- default.nix ---
+scope: import = importA
+
+importA ./a.nix
+
+
+
+--- a.nix ---
+scope: pins(A) = { b = v1; c = v1; }, follows(A) = { }, find(A) = ...
+import = importA
+
+import <b>
+  = importA (find(A) "b" in pins)
+          = { prefix = "b"; path = lookup "b" pins(A); follows = follows(A)."b"; }
+  = importA {...}
+  = info:
+    scoped env0(B) = {
+      import = scoped env0(B);
+      pins0(B) = pins(A); # only useful if B doesn't have an injector, otherwise will be overwritten
+      follows(B) = info.follows; # = follows(A)."b"
+      find0(B) = prefix: {
+        path = lookup prefix pins0(B);
+        follows = follows(B).prefix;
+      }
+    } "b/default.nix";
+
+
+
+--- b/default.nix ---
+scope: pins0(B) = pins(A), follows(B) = follows(A)."b", find0(B) = ...
+       import = importB0
+
+importB
+  = importB0 inject (pins: {
+
+    });
+
+
+
+--- b/inject.nix ---
+scope: pins0(B) = pins(A), follows(B) = follows(A)."b", find0(B) = ...
+
+  = scoped env(B) = {
+      pins(B) = pins0(B) // followsFn // follows(B)
+      follows(B) = followsFn // follows(B);
+      find(B) = prefix: {
+        path = lookup prefix pins(B);
+        follows = this.follows.prefix;
+      };
+    }
+
+
+
+--- b/default.nix ---
+scope:
+
+importB ./main.nix
+  = scoped env(B) {
+    pins
+  }
