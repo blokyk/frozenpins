@@ -43,7 +43,33 @@ scope: followsFn = (pins: {})
       }
     }
 
-  bootstrapImport = project:
+  # tldr: the `import` used when importing a project,
+  # before the project's inner `injectImport` takes over.
+  #
+  # at the entry point of a new project, either the
+  # project uses the inject mechanism, and therefore
+  # does `import ./inject`, OR it's a non-injected
+  # project, in which case we just need to have the
+  # correct `nixPath` and `find` values.
+  #
+  # point is, we make a special environment just for
+  # the import used to call inject, which will add a
+  # few useful info to the scope, namely the parent's
+  # follows for *this* project
+  #
+  # (...yes, all this is just because a project has no
+  # easy way to know its own name...)
+  #
+  # note that even if this is a non-injected project,
+  # it might, at some point, *itself* import an injected
+  # project, which would search its scope for follows etc.
+  # todo: make sure ^this^ is fine (i think we have to fuck slightly with findFile for this to work)
+  # note: bootstrapImport always has to know which project it
+  # is bootstrapping, thus, because some projects might not use
+  # an injector (and thus import subfiles), we have to "curry"
+  # the project as one of the arguments, and then use that as
+  # the import that's injected into the project's files' scope
+  bootstrapImport = project: file:
     env(project) = {
       import = bootstrapImport;
 
@@ -79,7 +105,7 @@ scope: followsFn = (pins: {})
         path = lookup prefix pins;
         projFollows = this.inheritedFollows.${prefix}
       }
-    }
+    } file:
 
 
 
