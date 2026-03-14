@@ -241,7 +241,7 @@ let
     mapAttrs (
       pin: val: {
         prefix = pin;
-        path   = toString val;
+        path   = val;
       }
     ) pins
   );
