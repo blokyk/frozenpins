@@ -1,19 +1,11 @@
 projectFollows:
 let
-  traceValFn = f: val: builtins.trace (f val) val;
-  traceVal = traceValFn (_toString "");
-
   currPinsAndFollows =
     let
       # if we're at the root, there's no follows to be inherited,
       # but otherwise the parent will init `inheritedFollows` in
       # the lexical scope using the bootstrap import
-      inheritedFollows =
-        builtins.__inheritedFollows
-        or (
-          assert __nixPath == builtins.nixPath || throw "__inheritedFollows not found despite not being at root";
-          {}
-        );
+      inheritedFollows = builtins.__inheritedFollows or {};
       npins = builtins.import ./default.nix {};
       npinsPaths = npinsToPinPaths npins;
     in
@@ -50,41 +42,27 @@ let
       bootstrapProjectImport fileInfo fileInfo
     else
       let
-        # fixme: debug
-        p = toString fileInfo;
-        l = builtins.stringLength p;
-        shortPath = builtins.substring (l - 26) l p;
-
         env = {
           import = subfileImport;
           __nixPath = currNixPath;
-          __findFile = mkResolveSymbol { currFile = shortPath; } currPins currFollows;
+          __findFile = mkResolveSymbol currPins currFollows;
         };
       in
       scopedImport env fileInfo;
 
   # creates a __findFile function that will forward `follows.<project>`
-  mkResolveSymbol = { currFile }:
+  mkResolveSymbol =
     parentPins: allParentFollows:
     nixPath: name:
-      # the nixPath in which we're resolving this symbol should
-      # be the one of the parent; if not, something went wrong
-      assert pinPathsToNixPath parentPins == nixPath;
       let
         prefix = toString (rootDir name);
+      in {
+        inherit prefix;
         path = builtins.findFile nixPath name;
-        followsForThisSymbol = (allParentFollows.${prefix} or {});
-      in
-      (break trace) "${currFile} requested <${prefix}>: ${path}"
-      {
-        inherit path prefix;
-        parentFollows =
-          (trace) "<${prefix}> will inherit follows ${_toString "" followsForThisSymbol}"
-          followsForThisSymbol;
+        # the follows this project should obey, according to the parent
+        parentFollows = allParentFollows.${prefix} or {};
         # the nix path in which this reference was resolved
-        parentPins =
-          (trace) "<${prefix}> will inherit pins ${_toString "" parentPins}"
-          parentPins;
+        parentPins = parentPins;
         __toString = self: self.path;
       };
 
@@ -108,7 +86,9 @@ let
   # note that even if this is a non-injected project,
   # it might, at some point, *itself* import an injected
   # project, which would search its scope for follows etc.
-  # todo: make sure ^this^ is fine (i think we have to fuck slightly with findFile for this to work)
+  # this should be fine, since `findFile` will still give
+  # the right project name and forward the follows.
+  # todo: check that ^this^ is true
   bootstrapProjectImport =
     # note: bootstrapImport always has to know which project it
     # is bootstrapping, thus, because some projects might not use
@@ -124,7 +104,7 @@ let
         # (an information that we can only compute with the
         # project's name) ONTO the child/project, so that they can use
         # it in their pin resolution
-        inheritedFollows = break project.parentFollows;
+        inheritedFollows = project.parentFollows;
 
         # the pins inside the project, considering the inherited
         # follows but NOT the project's own declared follows
@@ -152,15 +132,16 @@ let
             # still want that to resolve to `foo` instead of `root`'s pins
             # for `b` (if any)
             parentPins = project.parentPins;
-          in
-            (applyFollows
+          in (
+            applyFollows
               parentFollows
               followsFn
-              parentPins).pins;
+              parentPins
+          ).pins;
 
         env = {
           import = bootstrapProjectImport project;
-          __findFile = mkResolveSymbol { currFile = project.prefix; } inheritedPins inheritedFollows;
+          __findFile = mkResolveSymbol inheritedPins inheritedFollows;
           __nixPath = pinPathsToNixPath inheritedPins;
           builtins = builtins // {
             __inheritedFollows = inheritedFollows;
@@ -267,48 +248,12 @@ let
 
   ### utils ###
 
-  inherit (builtins) attrNames attrValues concatStringsSep mapAttrs trace;
-
-  break = val: builtins.seq (builtins.break val) val;
-  breakIf = cond: if cond then break else (x: x);
-  seq = val: builtins.seq val val;
+  inherit (builtins) attrNames mapAttrs;
 
   filterAttrs = pred: set:
     removeAttrs
       set
       (builtins.filter (name: !pred name set.${name}) (attrNames set));
-
-  partitionAttrs = pred: set:
-    let
-      results = mapAttrs pred set;
-      rightNames = builtins.filter (attr: results.${attr}) (attrNames set);
-      wrongNames = builtins.filter (attr: !(results.${attr})) (attrNames set);
-    in {
-      right = removeAttrs set wrongNames;
-      wrong = removeAttrs set rightNames;
-    };
-
-  mapAttrsToList = f: set: attrValues (mapAttrs f set);
-  mapListToAttrs = f: list: builtins.listToAttrs (map f list);
-
-  _toString = indent: val:
-    let inherit (builtins) isAttrs isFunction isList; in
-    if (isAttrs val) then
-      setToString indent val
-    else if (isFunction val) then
-      "<function>"
-    else if (isNull val) then
-      "null"
-    else if (isList val) then
-      "[ ${concatStringsSep ", " (map (_toString indent) val)} ]"
-    else
-      toString val;
-
-  setToString = indent: set:
-    let
-      foo = mapAttrsToList (n: v: "${n} = ${_toString (indent+"  ") v};") set;
-    in
-      "\n${indent}{\n  ${indent}" + (concatStringsSep "\n  ${indent}" foo) + "\n${indent}}";
 
   # "thank you, nixpkgs!" we all say in unison :)
   recursiveUpdate =
