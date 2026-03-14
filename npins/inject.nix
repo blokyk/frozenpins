@@ -220,6 +220,10 @@ let
         # fixme: `pins` is polluted when overriding a project that's not in the base pins
         # since we don't check that pins exist in basePins before overriding them and
         # setting the path, follows can "create" pins out of thin air :/
+        # however, this might be wanted in some cases, like "renaming" a pin in the
+        # current project (e.g. you have a pin for `a-v1` and one for `a-v2`, and want
+        # to simply use `a` in the project instead of adding a duplicate pin; therefore,
+        # you can do `a = a-v1` in the follows and it'll override it)
         allPinsAndFollows = recursiveUpdate [basePinsAsFollows ourFollows inheritedFollows];
 
         # actual pins for us to use will be of the form { b = { outPath = "foo"; }; },

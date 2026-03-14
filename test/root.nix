@@ -16,7 +16,7 @@ runCommand "root" {
   injectExpr = ''
     let
       injectImport = import ./npins/inject.nix (pins: {
-        transient.leaf = pins.leaf;
+        transient-no-pins.leaf = pins.leaf;
       });
     in
       injectImport ./main.nix
