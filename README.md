@@ -263,4 +263,9 @@ that this project is pretty cursed)
 
 ## License
 
-This work is licensed under the European Union Public License (EUPL) v1.2.
+The file `npins/inject.nix` is licensed under the MIT license, as it is meant
+to be freely copy-and-pasted into projects that needs it. An acknowledgment
+would be nice, but you are not legally bound to it.
+
+The rest of this work, including but not limited to documentation and tests,
+is licensed under the European Union Public License (EUPL) v1.2.
