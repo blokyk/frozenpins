@@ -10,6 +10,7 @@
 2. [How do I use it?](#how-do-i-use-it)
 3. [Why?](#why)
 4. [Known issues](#known-issues)
+5. [Related projects](#related-projects)
 
 ## What is this?
 
@@ -260,6 +261,22 @@ Woah, you okay there buddy? I don't know if that's very wise...
 (Of course, contributions, whether it be tiny typo corrections, better docs,
 bug reports, feature requests, or even PRs are all *very* welcome, but beware
 that this project is pretty cursed)
+
+## Related projects
+
+Here are a few projects that might also interest you, or that might be what
+you actually wanted from this. They are also are generally much better written
+and tested than mine. ~~Really wish I had found them *before* starting this.~~
+
+- [goldstein/unflake](https://codeberg.org/goldstein/unflake) allows non-flake
+  projects to depend on flake inputs while unifying dependencies, with similar
+  override rules and more; notably, it supports `npins` as a dependency pinning
+  tool, instead of the default nix "tarball caching" mechanism. it's really
+  good!
+
+- [andir/npins](https://github.com/andir/npins) is a lightweight dependency
+  management tool, as well as the reason we're all here today. if you're not
+  using it yet for your projects, you're missing out.
 
 ## License
 
