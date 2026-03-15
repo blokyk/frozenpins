@@ -1,9 +1,10 @@
 # `frozenpins`
 
-> [!WARNING] This is very cursed and scuffed, and completely untested (don't be
-> fooled by the `test/` directory, that's just a sandbox to try things in). I've
-> been told this will break `nixpkgs`, and I haven't even tried it before
-> publishing this! How irresponsible can you get??
+> [!WARNING]
+> This is very cursed and scuffed, and completely untested (don't be fooled by
+> the `test/` directory, that's just a sandbox to try things in). I've been
+> told this will break `nixpkgs`, and I haven't even tried it before publishing
+> this! How irresponsible can you get??
 
 1. [What is this?](#what-is-this)
 2. [How do I use it?](#how-do-i-use-it)
@@ -180,9 +181,9 @@ pins: {
 
 </details> -->
 
-> [!NOTE]: Overrides for dependencies are inherited from a parent project to
-> its dependencies, and it *will* override the dependency's follows, if it has
-> any.
+> [!NOTE]
+> Overrides for dependencies are inherited from a parent project to its
+> dependencies, and it *will* override the dependency's follows, if it has any.
 
 ## How do I use it?
 
@@ -199,11 +200,11 @@ you simply need to:
   3. replace `default.nix` with the following code:
      ```nix
      let
-      injectImport = import ./npins/inject.nix (pins: {
-        # todo: add your overrides/follows here!
-      });
-    in
-      injectImport ./main.nix
+       injectImport = import ./npins/inject.nix (pins: {
+         # todo: add your overrides/follows here!
+       });
+     in
+       injectImport ./main.nix
      ```
 
 That's about it! Any project you depend on using npins will now be available in
