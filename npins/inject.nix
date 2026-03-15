@@ -90,12 +90,16 @@ let
         prefix = toString (rootDir name);
       in {
         inherit prefix;
-        path = builtins.findFile nixPath name;
+        # we HAVE to name it outPath, so that nix believes this is
+        # a derivation, which (because this language is definitely
+        # not cursed) will implicitely convert it to a path/string
+        # for most operations (+, readFile, etc.)
+        outPath = builtins.findFile nixPath name;
         # the follows this project should obey, according to the parent
         parentFollows = allParentFollows.${prefix} or {};
         # the nix path in which this reference was resolved
         parentPins = parentPins;
-        __toString = self: self.path;
+        __toString = self: self.outPath;
       };
 
   # tldr: the `import` used when importing a project,
@@ -181,7 +185,7 @@ let
         };
       in
         fileInfo:
-          scopedImport env (fileInfo.path or fileInfo);
+          scopedImport env (fileInfo.outPath or fileInfo);
           # note: unlike subfileImport, we don't have to check
           # if this "fileInfo" is actually a path/subfile, because
           # either:
