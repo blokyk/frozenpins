@@ -4,7 +4,7 @@
       "type": "Git",
       "repository": {
         "type": "Git",
-        "url": "file:///home/blokyk/dev/lab/nix-crimes/npins-resolve/a"
+        "url": "file://./a"
       },
       "branch": "main",
       "submodules": false,
@@ -16,7 +16,7 @@
       "type": "Git",
       "repository": {
         "type": "Git",
-        "url": "file:///home/blokyk/dev/lab/nix-crimes/npins-resolve/b"
+        "url": "file://./b"
       },
       "branch": "main",
       "submodules": false,
@@ -28,7 +28,7 @@
       "type": "Git",
       "repository": {
         "type": "Git",
-        "url": "file:///home/blokyk/dev/lab/nix-crimes/npins-resolve/c"
+        "url": "file://./c"
       },
       "branch": "main",
       "submodules": false,

@@ -20,6 +20,11 @@ and allows two pretty nice things:
 1. [Referring to pins as channels](#1-referring-to-pins-as-channels)
 2. [Overriding downstream dependencies](#2-overriding-downstreamtransient-dependencies)
 
+The entire thing is implemented and amply commented in the
+[`inject.nix`](./inject.nix) top. In fact, if you want to use this, all you have
+to do is copy that file into your `npins/` directory. See the
+[How do I use it?](#how-do-i-use-it) section for more detailed information.
+
 ### 1. Referring to pins as channels
 
 Using vanilla `npins` can be frustrating when working on a project with a bunch
@@ -194,9 +199,9 @@ In an average project (e.g. a user package repository like
 [`blokyk/packages.nix`](https://github.com/blokyk/packages.nix)) uses `npins`,
 you simply need to:
 
-  1. drop [`npins/inject.nix`](./npins/inject.nix) into your own `npins/` folder
-  (no, you can't just fetch it, it has be physically next to `npins/default.nix`
-  and `npins/sources.json`, sorry)
+  1. drop [`inject.nix`](./inject.nix) into your `npins/` folder (no, you can't
+  just fetch it, it has be physically next to `npins/default.nix` and
+  `npins/sources.json`, sorry)
   2. move the code in your `default.nix` file to another file (e.g. `main.nix`)
   3. replace `default.nix` with the following code:
      ```nix
@@ -280,7 +285,7 @@ and tested than mine. ~~Really wish I had found them *before* starting this.~~
 
 ## License
 
-The file `npins/inject.nix` is licensed under the MIT license, as it is meant
+The file `inject.nix` is licensed under the MIT license, as it is meant
 to be freely copy-and-pasted into projects that needs it. An acknowledgment
 would be nice, but you are not legally bound to it.
 
