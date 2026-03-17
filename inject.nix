@@ -29,6 +29,8 @@
 # mechanisms, I would not wish it upon anyone anyway. If you encounter any
 # issue with it or wish to provide feedback, please submit an issue on the repo
 # given above.
+#
+# Version: 1.0.0
 
 projectFollows:
 let
