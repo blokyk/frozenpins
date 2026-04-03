@@ -30,7 +30,7 @@
 # issue with it or wish to provide feedback, please submit an issue on the repo
 # given above.
 #
-# Version: 1.0.0
+# Version: 1.1.0
 
 projectFollows:
 let
@@ -325,7 +325,13 @@ let
 
   rootDir = path:
     builtins.head (builtins.split "/" path);
-in
+in {
   # this import will be the one used INSIDE the project,
   # so it should be the one that imports subfiles
-  subfileImport
+  import = subfileImport;
+  pins = currPins;
+
+  # for ease of use & backwards-compatibility (with v1.0):
+  # if called as a function, just act as the custom import
+  __functor = self: self.import;
+}
