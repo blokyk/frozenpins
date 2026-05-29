@@ -30,7 +30,7 @@
 # issue with it or wish to provide feedback, please submit an issue on the repo
 # given above.
 #
-# Version: 1.1.0
+# Version: 1.1.1
 
 projectFollows:
 let
@@ -64,7 +64,7 @@ let
   currNixPath =
     pinPathsToNixPath currPins;
 
-  isProject = fileInfo: builtins.isAttrs fileInfo;
+  isProject = fileInfo: fileInfo ? __isFrozenpin;
 
   # the import used for any subfile of a project (including root/default.nix)
   # it should never be used to import npins/inject.nix
@@ -101,6 +101,7 @@ let
         parentFollows = allParentFollows.${prefix} or {};
         # the nix path in which this reference was resolved
         parentPins = parentPins;
+        __isFrozenpin = true;
         __toString = self: self.outPath;
       };
 

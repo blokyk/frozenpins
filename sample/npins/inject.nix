@@ -29,6 +29,8 @@
 # mechanisms, I would not wish it upon anyone anyway. If you encounter any
 # issue with it or wish to provide feedback, please submit an issue on the repo
 # given above.
+#
+# Version: 1.1.1
 
 projectFollows:
 let
@@ -62,7 +64,7 @@ let
   currNixPath =
     pinPathsToNixPath currPins;
 
-  isProject = fileInfo: builtins.isAttrs fileInfo;
+  isProject = fileInfo: fileInfo ? __isFrozenpin;
 
   # the import used for any subfile of a project (including root/default.nix)
   # it should never be used to import npins/inject.nix
@@ -99,6 +101,7 @@ let
         parentFollows = allParentFollows.${prefix} or {};
         # the nix path in which this reference was resolved
         parentPins = parentPins;
+        __isFrozenpin = true;
         __toString = self: self.outPath;
       };
 
@@ -323,7 +326,13 @@ let
 
   rootDir = path:
     builtins.head (builtins.split "/" path);
-in
+in {
   # this import will be the one used INSIDE the project,
   # so it should be the one that imports subfiles
-  subfileImport
+  import = subfileImport;
+  pins = currPins;
+
+  # for ease of use & backwards-compatibility (with v1.0):
+  # if called as a function, just act as the custom import
+  __functor = self: self.import;
+}
