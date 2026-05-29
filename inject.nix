@@ -30,7 +30,7 @@
 # issue with it or wish to provide feedback, please submit an issue on the repo
 # given above.
 #
-# Version: 1.1.1
+# Version: 1.1.2
 
 projectFollows:
 let
@@ -89,14 +89,18 @@ let
     parentPins: allParentFollows:
     nixPath: name:
       let
+        maybePath = builtins.tryEval (builtins.findFile nixPath name);
         prefix = toString (rootDir name);
-      in {
+      in
+      if !maybePath.success then
+        throw "couldn't resolve pin '${prefix}' with frozenpins"
+      else {
         inherit prefix;
         # we HAVE to name it outPath, so that nix believes this is
         # a derivation, which (because this language is definitely
         # not cursed) will implicitely convert it to a path/string
         # for most operations (+, readFile, etc.)
-        outPath = builtins.findFile nixPath name;
+        outPath = maybePath.value;
         # the follows this project should obey, according to the parent
         parentFollows = allParentFollows.${prefix} or {};
         # the nix path in which this reference was resolved
