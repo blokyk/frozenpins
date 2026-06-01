@@ -146,11 +146,24 @@ since it is inherited from the pin we defined for `oestro`. Similarly, if
 `nixpkgs` itself also had a dependency `foo` that we overrode, it would "bubble
 up" to both `oestro.nixpkgs.foo` *and* `zspkgs.oestro.nixpkgs.foo`.
 
-</details>
+Of course, if we actually wanted `zpkgs`'s `oestro` to use a different `nixpkgs`,
+we could still override its specific `nixpkgs`:
 
-<!--
-  Not supported yet, see #6 (tldr: if you want to do this right now, you have to
-  write `foo.outPath = ./...` instead)
+```nix
+pins: {
+  oestro.nixpkgs = pins.nixpkgs;
+  zpkgs.oestro = pins.oestro // {
+    nixpkgs = pins.nixpkgs-unstable;
+  }
+}
+```
+
+> [!WARN]
+> Do **not** use `rec` for the attribute set, as that will give you wrong and
+> inconsistent results, since the pins will not have undergone the necessary
+> normalization and merging.
+
+</details>
 
 <details>
 
@@ -166,30 +179,31 @@ pins: {
 }
 ```
 
-</details> -->
-
-<!--
-  Not supported yet, see #2
+</details>
 
 <details>
 
-<summary>Example 4: Local override</summary>
+<summary>Example 5: Local override + follows</summary>
 
-Now, we'd to override one of the dependencies with a local version of it.
-Thankfully, this is relatively easy:
+If you want to both set a dependency to a local path while also overriding one
+of its own dependencies, you can explicitely use `outPath` to specify the path:
 
 ```nix
 pins: {
-  nix-debug = ~/dev/nix-debug;
-  oestro.nixpkgs = ~/dev/nixpkgs;
+  nix-debug = {
+    outPath = ~/dev/nix-debug;
+    nixpkgs = pins.nixpkgs;
+  };
 }
 ```
 
-</details> -->
+Sorry that this is kinda hard to discover :(
+
+</details>
 
 > [!NOTE]
 > Overrides for dependencies are inherited from a parent project to its
-> dependencies, and it *will* override the dependency's follows, if it has any.
+> dependencies, and it *will* override the dependency's follows, when applicable.
 
 ## How do I use it?
 
@@ -271,7 +285,7 @@ that this project is pretty cursed)
 
 Here are a few projects that might also interest you, or that might be what
 you actually wanted from this. They are also are generally much better written
-and tested than mine. ~~Really wish I had found them *before* starting this.~~
+and tested than mine. ~~Really wish I had found unflake *before* starting this.~~
 
 - [goldstein/unflake](https://codeberg.org/goldstein/unflake) allows non-flake
   projects to depend on flake inputs while unifying dependencies, with similar

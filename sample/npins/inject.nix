@@ -30,16 +30,17 @@
 # issue with it or wish to provide feedback, please submit an issue on the repo
 # given above.
 #
-# Version: 1.1.1
+# Version: 1.2.0
 
 projectFollows:
 let
+  # if we're at the root, there's no follows to be inherited,
+  # but otherwise the parent will init `inheritedFollows` in
+  # the lexical scope using the bootstrap import
+  inheritedFollows = builtins.__inheritedFollows or {};
+
   currPinsAndFollows =
     let
-      # if we're at the root, there's no follows to be inherited,
-      # but otherwise the parent will init `inheritedFollows` in
-      # the lexical scope using the bootstrap import
-      inheritedFollows = builtins.__inheritedFollows or {};
       npins = builtins.import ./default.nix {};
       npinsPaths = npinsToPinPaths npins;
     in
@@ -68,7 +69,7 @@ let
 
   # the import used for any subfile of a project (including root/default.nix)
   # it should never be used to import npins/inject.nix
-  subfileImport = fileInfo:
+  subfileImport = currChain: fileInfo:
     # if we're not actually importing a file but a project, then
     # use bootstrapImport instead, which will deal with computing
     # and injecting the right environment for that
@@ -77,26 +78,36 @@ let
     else
       let
         env = {
-          import = subfileImport;
+          import = subfileImport currChain;
           __nixPath = currNixPath;
-          __findFile = mkResolveSymbol currPins currFollows;
+          __findFile = mkResolveSymbol currChain currPins currFollows;
+          builtins = builtins // {
+            __inheritedFollows = inheritedFollows;
+            inherit builtins;
+          };
         };
       in
       scopedImport env fileInfo;
 
   # creates a __findFile function that will forward `follows.<project>`
   mkResolveSymbol =
-    parentPins: allParentFollows:
+    parentChain: parentPins: allParentFollows:
     nixPath: name:
       let
+        maybePath = builtins.tryEval (builtins.findFile nixPath name);
         prefix = toString (rootDir name);
-      in {
-        inherit prefix;
+        # currently only used for debugging,
+        chain = builtins.seq prefix (parentChain ++ [ prefix ]);
+      in
+      if !maybePath.success then
+        builtins.findFile nixPath name
+      else {
+        inherit prefix chain;
         # we HAVE to name it outPath, so that nix believes this is
         # a derivation, which (because this language is definitely
         # not cursed) will implicitely convert it to a path/string
         # for most operations (+, readFile, etc.)
-        outPath = builtins.findFile nixPath name;
+        outPath = maybePath.value;
         # the follows this project should obey, according to the parent
         parentFollows = allParentFollows.${prefix} or {};
         # the nix path in which this reference was resolved
@@ -179,11 +190,12 @@ let
           ).pins;
 
         env = {
-          import = bootstrapProjectImport project;
-          __findFile = mkResolveSymbol inheritedPins inheritedFollows;
+          import = subfileImport project.chain;
+          __findFile = mkResolveSymbol project.chain inheritedPins inheritedFollows;
           __nixPath = pinPathsToNixPath inheritedPins;
           builtins = builtins // {
             __inheritedFollows = inheritedFollows;
+            inherit builtins;
           };
         };
       in
@@ -252,9 +264,27 @@ let
         #         = { b.c = <c>; a.b = <b>; a.b.c = <c>; })
         ourFollows = followsFn allPinsAndFollows;
 
+        # if a pin is of the form "foo.bar = ./vendored-bar", transform it to
+        # the "correct" form, which is `foo.bar.outPath = ./vendored-bar`
+        normalizeRawPathToOutPath =
+          mapAttrs (name: pinInfo:
+            # obviously, we don't want to turn .outPath into .outPath.outPath
+            if name == "outPath" then
+              # todo: warn/normalize if there's any .outPath.outPath (which can
+              # happen if you do `foo = { outPath = pins.bar; ... }` with `bar = /nya`)
+              pinInfo
+            else
+              if builtins.isPath pinInfo || builtins.isString pinInfo then
+                { outPath = pinInfo; }
+              else
+                # recurse down so that all attributes are normalized in
+                # the followsFn, even if they are nested
+                normalizeRawPathToOutPath pinInfo
+          );
+
         # note: the fact that we merge `ourFollows` in the middle here
         #       means that you can overwrite your own pins if you want
-        #       to (e.g. to redirect a dependency to a local path)
+        #       (e.g. to redirect a dependency to a local path)
         #
         # fixme: `pins` is polluted when overriding a project that's not in the base pins
         # since we don't check that pins exist in basePins before overriding them and
@@ -263,7 +293,14 @@ let
         # current project (e.g. you have a pin for `a-v1` and one for `a-v2`, and want
         # to simply use `a` in the project instead of adding a duplicate pin; therefore,
         # you can do `a = a-v1` in the follows and it'll override it)
-        allPinsAndFollows = recursiveUpdate [basePinsAsFollows ourFollows inheritedFollows];
+        allPinsAndFollows = recursiveUpdate
+          # note: we do the map _before_ the merging, so that `foo = /bla` and `foo.bar = baz`
+          # are merged correctly by normalizing the first to `foo.outPath = /bla`
+          # this is slightly inefficient (because in most cases we'll be traversing attrsets
+          # thrice for no reasons), but the only alternative would be a custom `recursiveUpdate`
+          # during which we special case path/attr merges, which... would be hard to implement
+          # and weird ^^;
+          (map normalizeRawPathToOutPath [basePinsAsFollows ourFollows inheritedFollows]);
 
         # actual pins for us to use will be of the form { b = { outPath = "foo"; }; },
         # whereas follows will be nested { b = { c = { outPath = "bar"; }; }; }.
@@ -329,7 +366,7 @@ let
 in {
   # this import will be the one used INSIDE the project,
   # so it should be the one that imports subfiles
-  import = subfileImport;
+  import = subfileImport [];
   pins = currPins;
 
   # for ease of use & backwards-compatibility (with v1.0):

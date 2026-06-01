@@ -30,7 +30,7 @@
 # issue with it or wish to provide feedback, please submit an issue on the repo
 # given above.
 #
-# Version: 1.1.3
+# Version: 1.2.0
 
 projectFollows:
 let
@@ -264,9 +264,27 @@ let
         #         = { b.c = <c>; a.b = <b>; a.b.c = <c>; })
         ourFollows = followsFn allPinsAndFollows;
 
+        # if a pin is of the form "foo.bar = ./vendored-bar", transform it to
+        # the "correct" form, which is `foo.bar.outPath = ./vendored-bar`
+        normalizeRawPathToOutPath =
+          mapAttrs (name: pinInfo:
+            # obviously, we don't want to turn .outPath into .outPath.outPath
+            if name == "outPath" then
+              # todo: warn/normalize if there's any .outPath.outPath (which can
+              # happen if you do `foo = { outPath = pins.bar; ... }` with `bar = /nya`)
+              pinInfo
+            else
+              if builtins.isPath pinInfo || builtins.isString pinInfo then
+                { outPath = pinInfo; }
+              else
+                # recurse down so that all attributes are normalized in
+                # the followsFn, even if they are nested
+                normalizeRawPathToOutPath pinInfo
+          );
+
         # note: the fact that we merge `ourFollows` in the middle here
         #       means that you can overwrite your own pins if you want
-        #       to (e.g. to redirect a dependency to a local path)
+        #       (e.g. to redirect a dependency to a local path)
         #
         # fixme: `pins` is polluted when overriding a project that's not in the base pins
         # since we don't check that pins exist in basePins before overriding them and
@@ -275,7 +293,14 @@ let
         # current project (e.g. you have a pin for `a-v1` and one for `a-v2`, and want
         # to simply use `a` in the project instead of adding a duplicate pin; therefore,
         # you can do `a = a-v1` in the follows and it'll override it)
-        allPinsAndFollows = recursiveUpdate [basePinsAsFollows ourFollows inheritedFollows];
+        allPinsAndFollows = recursiveUpdate
+          # note: we do the map _before_ the merging, so that `foo = /bla` and `foo.bar = baz`
+          # are merged correctly by normalizing the first to `foo.outPath = /bla`
+          # this is slightly inefficient (because in most cases we'll be traversing attrsets
+          # thrice for no reasons), but the only alternative would be a custom `recursiveUpdate`
+          # during which we special case path/attr merges, which... would be hard to implement
+          # and weird ^^;
+          (map normalizeRawPathToOutPath [basePinsAsFollows ourFollows inheritedFollows]);
 
         # actual pins for us to use will be of the form { b = { outPath = "foo"; }; },
         # whereas follows will be nested { b = { c = { outPath = "bar"; }; }; }.
