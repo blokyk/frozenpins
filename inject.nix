@@ -30,16 +30,17 @@
 # issue with it or wish to provide feedback, please submit an issue on the repo
 # given above.
 #
-# Version: 1.1.2
+# Version: 1.1.3
 
 projectFollows:
 let
+  # if we're at the root, there's no follows to be inherited,
+  # but otherwise the parent will init `inheritedFollows` in
+  # the lexical scope using the bootstrap import
+  inheritedFollows = builtins.__inheritedFollows or {};
+
   currPinsAndFollows =
     let
-      # if we're at the root, there's no follows to be inherited,
-      # but otherwise the parent will init `inheritedFollows` in
-      # the lexical scope using the bootstrap import
-      inheritedFollows = builtins.__inheritedFollows or {};
       npins = builtins.import ./default.nix {};
       npinsPaths = npinsToPinPaths npins;
     in
@@ -68,7 +69,7 @@ let
 
   # the import used for any subfile of a project (including root/default.nix)
   # it should never be used to import npins/inject.nix
-  subfileImport = fileInfo:
+  subfileImport = currChain: fileInfo:
     # if we're not actually importing a file but a project, then
     # use bootstrapImport instead, which will deal with computing
     # and injecting the right environment for that
@@ -77,25 +78,31 @@ let
     else
       let
         env = {
-          import = subfileImport;
+          import = subfileImport currChain;
           __nixPath = currNixPath;
-          __findFile = mkResolveSymbol currPins currFollows;
+          __findFile = mkResolveSymbol currChain currPins currFollows;
+          builtins = builtins // {
+            __inheritedFollows = inheritedFollows;
+            inherit builtins;
+          };
         };
       in
       scopedImport env fileInfo;
 
   # creates a __findFile function that will forward `follows.<project>`
   mkResolveSymbol =
-    parentPins: allParentFollows:
+    parentChain: parentPins: allParentFollows:
     nixPath: name:
       let
         maybePath = builtins.tryEval (builtins.findFile nixPath name);
         prefix = toString (rootDir name);
+        # currently only used for debugging,
+        chain = builtins.seq prefix (parentChain ++ [ prefix ]);
       in
       if !maybePath.success then
-        throw "couldn't resolve pin '${prefix}' with frozenpins"
+        builtins.findFile nixPath name
       else {
-        inherit prefix;
+        inherit prefix chain;
         # we HAVE to name it outPath, so that nix believes this is
         # a derivation, which (because this language is definitely
         # not cursed) will implicitely convert it to a path/string
@@ -183,11 +190,12 @@ let
           ).pins;
 
         env = {
-          import = bootstrapProjectImport project;
-          __findFile = mkResolveSymbol inheritedPins inheritedFollows;
+          import = subfileImport project.chain;
+          __findFile = mkResolveSymbol project.chain inheritedPins inheritedFollows;
           __nixPath = pinPathsToNixPath inheritedPins;
           builtins = builtins // {
             __inheritedFollows = inheritedFollows;
+            inherit builtins;
           };
         };
       in
@@ -333,7 +341,7 @@ let
 in {
   # this import will be the one used INSIDE the project,
   # so it should be the one that imports subfiles
-  import = subfileImport;
+  import = subfileImport [];
   pins = currPins;
 
   # for ease of use & backwards-compatibility (with v1.0):
