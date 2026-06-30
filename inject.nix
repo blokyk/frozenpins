@@ -46,6 +46,9 @@ let
     in
       applyFollows inheritedFollows projectFollows npinsPaths;
 
+  startsWith = pre: str:
+    pre == (builtins.substring 0 (builtins.stringLength pre) str);
+
   # this is only used when importing either `project/*.nix`
   # or `root/*.nix`, but NEVER an `inject.nix`
   #
@@ -65,26 +68,28 @@ let
   currNixPath =
     pinPathsToNixPath currPins;
 
-  isProject = fileInfo: fileInfo ? __isFrozenpin;
+  isProject = fileInfo: fileInfo ? __frozenpinInfo;
 
   # the import used for any subfile of a project (including root/default.nix)
   # it should never be used to import npins/inject.nix
-  subfileImport = currChain: fileInfo:
+  subfileImport = currChain: env: fileInfo:
     # if we're not actually importing a file but a project, then
     # use bootstrapImport instead, which will deal with computing
     # and injecting the right environment for that
     if (isProject fileInfo) then
-      bootstrapProjectImport fileInfo fileInfo
+        bootstrapProjectImport fileInfo.__frozenpinInfo fileInfo
+    else if (isNpinsImport fileInfo) then
+      npinsEvilSubvertingImport fileInfo
     else
       let
         env = {
           import = subfileImport currChain;
           __nixPath = currNixPath;
           __findFile = mkResolveSymbol currChain currPins currFollows;
-          builtins = builtins // {
+          builtins = let self = builtins // {
             __inheritedFollows = inheritedFollows;
-            inherit builtins;
-          };
+            builtins = self;
+          }; in self;
         };
       in
       scopedImport env fileInfo;
@@ -102,17 +107,18 @@ let
       if !maybePath.success then
         builtins.findFile nixPath name
       else {
-        inherit prefix chain;
         # we HAVE to name it outPath, so that nix believes this is
         # a derivation, which (because this language is definitely
-        # not cursed) will implicitely convert it to a path/string
+        # not cursed) will implicitly convert it to a path/string
         # for most operations (+, readFile, etc.)
         outPath = maybePath.value;
-        # the follows this project should obey, according to the parent
-        parentFollows = allParentFollows.${prefix} or {};
-        # the nix path in which this reference was resolved
-        parentPins = parentPins;
-        __isFrozenpin = true;
+        __frozenpinInfo = {
+          inherit prefix chain;
+          # the follows this project should obey, according to the parent
+          parentFollows = allParentFollows.${prefix} or {};
+          # the nix path in which this reference was resolved
+          parentPins = parentPins;
+        };
         __toString = self: self.outPath;
       };
 
@@ -190,7 +196,8 @@ let
           ).pins;
 
         env = {
-          import = subfileImport project.chain;
+          # fixme: why isn't this bootstrap????
+          import = subfileImport project.chain env;
           __findFile = mkResolveSymbol project.chain inheritedPins inheritedFollows;
           __nixPath = pinPathsToNixPath inheritedPins;
           builtins = builtins // {
@@ -214,6 +221,53 @@ let
           #     file in case one of them refers to a project that
           #     DOES use an injector (in case it'll go to the first
           #     case above)
+
+  # try to guess whether the imported file is the npins/default.nix file
+  # fixme: this will break if inject.nix's npins import ever goes through
+  # this function
+  isNpinsImport = fileInfo:
+    assert !(isProject fileInfo) || throw "project-ness should have been checked before npins-ness, something went wrong >_> please report this bug to upstream (github.com/blokyk/frozenpins/issues/new)!";
+    let
+      filename = baseNameOf fileInfo;
+      isShortenedNpins = filename == "npins";
+      isInsideNpinsDir = dirOf fileInfo == "npins";
+      isDefaultFile    = filename == "default.nix" || filename == ".";
+    in
+      isShortenedNpins || (isInsideNpinsDir && isDefaultFile);
+  # this 'import' is used for `import ./npins` or `import ./npins/default.nix` calls
+  # (which are _not_ from frozenpins) to override their return value to make sure
+  # pins resolve to their overridden values (instead of what's in the lockfile) _and_
+  # that the returned pins are each frozenpins projects instead of bare files.
+  #
+  # this works by first importing the normal pins using npins, and then overriding
+  # any pins that our parent project wants to override (using `inheritedFollows`),
+  # and adding `__isFrozenpin` to it, so that frozenpin will recognize it as a pin
+  # and not just a random subfile (note: we actually put the project metadata into
+  # `.outPath`, as some users explicitly write `import pin.outPath`, so it's safest
+  # to just put it into `.outPath`).
+  #
+  # note: there are a million ways to use npins pins, and we need to transparently
+  # support all of them:
+  #   - `import ./npins` returns a functor that optionally takes the lockfile's path
+  #     or data as an argument
+  #   - each individual pin is a functor, optionally taking stuff like a nixpkgs
+  #     instance that is used for some fetchers (e.g. containers, tarballs, ...);
+  #     in our case, we either pass that transparently (if the pin isn't overridden),
+  #     or we ignore it to just return out override
+  #   - each individual pin also contains metadata about it (e.g. repo name, channel,
+  #     url, ...). obviously, we don't have any good data to override there, we just
+  #     need to forward it (and be careful not to override it )
+  npinsEvilSubvertingImport = fileInfo:
+    mkFunctor (
+      args:
+      let
+        basePins = builtins.import fileInfo args;
+        mayOverride = name: pinInfo:
+          ;
+      in
+        mapAttrs mayOverride basePins
+    );
+
 
   # given:
   #   - a set of follows (overrides)
@@ -316,6 +370,7 @@ let
         follows = mapAttrs (_: val: removeAttrs val ["outPath"]) allPinsAndFollows;
       };
 
+  # strip all the info except outPath
   npinsToPinPaths = mapAttrs (_: val: val.outPath);
   pinPathsToNixPath = pins: builtins.attrValues (
     mapAttrs (
@@ -329,6 +384,17 @@ let
   ### utils ###
 
   inherit (builtins) attrNames mapAttrs;
+
+  # stolen from npins :3
+  # Backwards-compatibly make something that previously didn't take any arguments take some
+  # The function must return an attrset, and will unfortunately be eagerly evaluated
+  # Same thing, but it catches eval errors on the default argument so that one may still call it with other arguments
+  mkFunctor =
+    fn:
+    let
+      e = builtins.tryEval (fn { });
+    in
+    (if e.success then e.value else { error = fn { }; }) // { __functor = _self: fn; };
 
   filterAttrs = pred: set:
     removeAttrs
@@ -366,7 +432,7 @@ let
 in {
   # this import will be the one used INSIDE the project,
   # so it should be the one that imports subfiles
-  import = subfileImport [];
+  import = subfileImport [] {};
   pins = currPins;
 
   # for ease of use & backwards-compatibility (with v1.0):

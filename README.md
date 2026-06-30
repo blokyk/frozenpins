@@ -144,7 +144,7 @@ pins: {
 As you can see, the `zpkgs.oestro.nixpkgs = pins.nixpkgs` line is "implicit,"
 since it is inherited from the pin we defined for `oestro`. Similarly, if
 `nixpkgs` itself also had a dependency `foo` that we overrode, it would "bubble
-up" to both `oestro.nixpkgs.foo` *and* `zspkgs.oestro.nixpkgs.foo`.
+up" to both `oestro.nixpkgs.foo` *and* `zpkgs.oestro.nixpkgs.foo`.
 
 Of course, if we actually wanted `zpkgs`'s `oestro` to use a different `nixpkgs`,
 we could still override its specific `nixpkgs`:
@@ -210,8 +210,8 @@ Sorry that this is kinda hard to discover :(
 ### In a normal project
 
 In an average project (e.g. a user package repository like
-[`blokyk/packages.nix`](https://github.com/blokyk/packages.nix)) uses `npins`,
-you simply need to:
+[`blokyk/packages.nix`](https://github.com/blokyk/packages.nix)) that uses
+`npins`, you simply need to:
 
   1. drop [`inject.nix`](./inject.nix) into your `npins/` folder (no, you can't
   just fetch it, it has be physically next to `npins/default.nix` and
@@ -221,7 +221,7 @@ you simply need to:
      ```nix
      let
        injectImport = import ./npins/inject.nix (pins: {
-         # todo: add your overrides/follows here!
+         # todo: add your overrides here!
        });
      in
        injectImport ./main.nix
@@ -229,8 +229,38 @@ you simply need to:
 
 That's about it! Any project you depend on using npins will now be available in
 the other files of your project that's imported (directly or not) by `main.nix`.
-In particular, if one of your dependencies uses channels/`<bracket>` syntax, it
-will refer to your pins instead of using `NIX_PATH`.
+In particular, if one of your dependencies uses `<bracket>` syntax ("channels"),
+it will refer to your pins instead of using `NIX_PATH`.
+
+> [!NOTE]
+> Since [v1.1.0](https://github.com/blokyk/frozenpins/tree/v1.1.0), the value
+> returned by `import ./npins/inject.nix (pins: ...)` is actually an attribute
+> set containing a `pins` attribute and an `import` attribute. This allows you
+> to avoid having to split your normal code into a separate `main.nix` file, at
+> the cost of not being able to use the `<bracket>` syntax; you'll instead have
+> to use `pins.foo`, like you usually would when using npins. In my opinion,
+> this is more error-prone for large files, but I tend to only use `default.nix`
+> as a minimalist entry point, so it shouldn't be a problem.
+>
+> ```nix
+> let
+>   injector = import ./npins/inject.nix (pins: {
+>     # todo: add your overrides here!
+>   });
+>   inherit (injector) pins;
+>   pkgs = injector.import pins.nixpkgs {};
+>   inherit (pkgs) lib;
+>   gitignore-nix = injector.import pins.gitignore-nix { inherit lib; };
+> in {
+>   package = injector.import ./package.nix { inherit gitignore-nix lib; };
+>   tests = injector.import ./tests { inherit pkgs; };
+> }
+> ```
+>
+> **Note that this is implemented in a backwards-compatible manner**. Thanks to
+> the magic of functors, you can keep using `import ./npins/inject.nix (pins: ...)`
+> like a normal function. For example, we could have written `injector pins.nixpkgs`
+> or `injector ./tests` in the example above to get the exact same result.
 
 ### In NixOS
 

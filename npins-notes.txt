@@ -1,0 +1,22 @@
+root
+|
+|-- app:1
+|   |
+|   |-- builder:1
+|       |
+|       |-- pkgs:1
+|
+|-- builder:2
+|   |-- pkgs:2
+|
+|-- pkgs:3
+
+root: {
+    builder.pkgs = root.pkgs;
+    app.builder  = root.builder;
+}
+
+app> pins = import ./npins {}
+app> bldr = import pins.builder
+app> bldr.doStuff ./.
+
